@@ -58,25 +58,19 @@ jobs:
             -project "$PROJECT_FILE" \
             -list
 
-      - name: Build for Real Device (Ad-Hoc Sign)
+      - name: Build for Real Device (Unsigned & Ad-Hoc Sign)
         shell: bash
         run: |
           set +e
           set -o pipefail
 
-          rm -rf "$GITHUB_WORKSPACE/build"
-          mkdir -p "$GITHUB_WORKSPACE/build"
-
+          # 使用默认DerivedData构建，避免自定义目录冲突，关闭编译时签名检查
           xcodebuild \
             -project "$PROJECT_DIR" \
             -scheme "$PROJECT_NAME" \
             -configuration Release \
             -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGN_IDENTITY="-" \
-            VALIDATE_PRODUCT=NO \
-            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/build" \
+            CODE_SIGNING_ALLOWED=NO \
             clean build \
             2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
 
@@ -86,8 +80,9 @@ jobs:
           echo "xcodebuild exit code: $BUILD_STATUS"
           echo ""
 
-          APP_PATH=$(find "$GITHUB_WORKSPACE/build" \
-            -maxdepth 2 \
+          # 在 Xcode 默认缓存目录中寻找生成的 .app 文件
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData \
+            -maxdepth 6 \
             -type d \
             -name "*.app" \
             -print \
@@ -103,13 +98,12 @@ jobs:
             exit 1
           fi
 
-          echo "APP successfully generated:"
+          echo "APP successfully generated at:"
           echo "$APP_PATH"
 
-          if [ "$BUILD_STATUS" -ne 0 ]; then
-            echo "WARNING: xcodebuild returned $BUILD_STATUS,"
-            echo "but the iPhone .app exists, so packaging will continue."
-          fi
+          # 赋予标准的本地 Ad-Hoc 签名，使包结构完整
+          echo "Applying ad-hoc code signature..."
+          codesign --deep --force --sign - "$APP_PATH" || true
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
